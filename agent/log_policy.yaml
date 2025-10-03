@@ -1,0 +1,88 @@
+# log_policy.yaml
+version: 1
+default_category: ok
+default_severity: info
+fail_on_severity: error   # build should fail if any violation >= this
+
+globals:
+  # File/path filters you never want to flag (tests, generated code, etc.)
+  exclude_paths:
+    - "*/target/**"
+    - "**/build/**"
+    - "**/generated/**"
+    - "**/test/**"
+
+# Reusable keyword lists
+lists:
+  pii_keywords:
+    - (?i)\b(pass(word)?|token|secret|cpf|ssn|credit\s*card|cvv|api[_-]?key)\b
+  low_signal_keywords:
+    - (?i)\b(entering|exiting|here|tmp|todo|debug)\b
+
+rules:
+  - id: NO_SYSTEM_OUT
+    description: "Disallow System.out/err for application logs"
+    category: bad_logs
+    severity: error
+    when:
+      is_system_out_err: true
+    suggest: "Use a logger (SLF4J) instead of System.out/err"
+
+  - id: CONCAT_IN_LOGS
+    description: "No string concatenation inside log calls"
+    category: bad_format_logs
+    severity: error
+    when:
+      uses_concat: true
+    suggest: "Use placeholders (e.g., 'User {} logged in', userId)"
+
+  - id: PLACEHOLDER_MISMATCH
+    description: "{} / printf placeholder count must match args"
+    category: bad_format_logs
+    severity: error
+    when:
+      placeholder_mismatch: true
+    suggest: "Fix placeholder/argument counts; keep Throwable as last arg"
+
+  - id: PII_IN_LOGS
+    description: "PII-like tokens must not appear in log templates"
+    category: bad_logs
+    severity: error
+    when:
+      message_regex_any_of: "@pii_keywords"
+    suggest: "Remove or hash PII, or use structured redaction"
+
+  - id: LOW_SIGNAL_NOISE
+    description: "Avoid low-signal messages"
+    category: unnecessary_logs
+    severity: warn
+    when:
+      message_regex_any_of: "@low_signal_keywords"
+    suggest: "Provide actionable context or remove the log"
+
+  - id: OVERSIZED_MESSAGE
+    description: "Very large message templates are costly"
+    category: bad_logs
+    severity: warn
+    when:
+      message_bytes_gt: 512
+    suggest: "Trim the template; log identifiers not full payloads"
+
+  - id: LEVEL_POLICY_WARN_ERROR_ONLY_FOR_EXCEPTIONS
+    description: "WARN/ERROR should include a Throwable when logging exceptions"
+    category: bad_format_logs
+    severity: warn
+    when:
+      level_in: ["WARN","ERROR"]
+      # Heuristic: if the text suggests an exception but call lacks throwable
+      message_regex_any_of:
+        - "(?i)exception|stack|traceback|failure"
+      has_throwable_last_arg: false
+    suggest: "Pass the Throwable as the last parameter to the logger"
+
+# Optional explicit suppressions (use sparingly)
+suppress:
+  - id: CONCAT_IN_LOGS
+    reason: "Third-party adapter we can't modify"
+    paths:
+      - "**/legacy/**"
